@@ -1,0 +1,13 @@
+# persoonlijke gegevens: NOOIT committen
+config.json
+wallets.txt
+resultaten/
+tron_graaf.html
+tron_rapport.txt
+*.env
+
+# gegenereerd / lokaal
+venv/
+lib/
+__pycache__/
+*.pyc
