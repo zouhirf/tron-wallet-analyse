@@ -1,29 +1,10 @@
-#!/usr/bin/env python3
-"""
-tron_links.py : verbanden tussen Tron wallets in kaart brengen (USDT TRC20 + TRX)
-
-Installeren:
-    pip install requests networkx pyvis
-
-Gebruik:
-    python tron_links.py TAdres1 TAdres2 TAdres3
-    python tron_links.py --file wallets.txt --depth 2
-
-Gratis API key (sterk aangeraden, veel sneller): maak een account op https://www.trongrid.io
-    PowerShell:  $env:TRONGRID_API_KEY="jouw-key"
-    of:          --api-key jouw-key
-
-Resultaat:
-    tron_graaf.html  -> interactieve grafiek (openen in je browser)
-    tron_rapport.txt -> welke wallets verbonden zijn en via welke route
-"""
 import argparse
 import hashlib
 import html as htmlmod
-import re
 import itertools
 import math
 import os
+import re
 import sys
 import time
 from collections import defaultdict
@@ -38,10 +19,7 @@ USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
 B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 
-# ---------- hulpfuncties ----------
-
 def hex_to_b58(h: str) -> str:
-    """Tron hex adres (41...) omzetten naar T... adres."""
     if h.startswith("T"):
         return h
     raw = bytes.fromhex(h)
@@ -63,8 +41,6 @@ def datum(ts_ms) -> str:
         return "?"
     return datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
 
-
-# ---------- TronGrid API ----------
 
 class Tron:
     def __init__(self, api_key: str | None, max_pages: int):
@@ -99,7 +75,7 @@ class Tron:
             if not fp:
                 return items, False
             params["fingerprint"] = fp
-        return items, True  # afgekapt: er zijn meer transacties dan opgehaald
+        return items, True
 
     @staticmethod
     def _trx_transfer(t):
@@ -114,7 +90,6 @@ class Tron:
             return None
 
     def transfers(self, addr):
-        """Lijst van (van, naar, munt, bedrag, timestamp) + of de lijst afgekapt is."""
         out = []
         usdt, t1 = self._paged(f"/v1/accounts/{addr}/transactions/trc20",
                                {"contract_address": USDT_CONTRACT, "only_confirmed": "true"})
@@ -134,7 +109,6 @@ class Tron:
         return out, (t1 or t2)
 
     def eerste_funder(self, addr):
-        """Wie stuurde als eerste TRX naar dit adres (activeert de wallet)."""
         items, _ = self._paged(f"/v1/accounts/{addr}/transactions",
                                {"only_confirmed": "true", "order_by": "block_timestamp,asc"},
                                max_pages=1)
@@ -145,15 +119,13 @@ class Tron:
         return None
 
 
-# ---------- crawlen ----------
-
 def crawl(api, seeds, depth, top_n, hub_limit, max_addr, min_usdt, min_trx):
     edges = defaultdict(lambda: {"USDT": 0.0, "TRX": 0.0, "n": 0, "first": None})
     depth_of = {s: 0 for s in seeds}
     hubs = set()
     queue = list(seeds)
     fetched = set()
-    gezien = set()  # transactie ID's, zodat niets dubbel telt
+    gezien = set()
 
     while queue and len(fetched) < max_addr:
         addr = queue.pop(0)
@@ -163,7 +135,7 @@ def crawl(api, seeds, depth, top_n, hub_limit, max_addr, min_usdt, min_trx):
         print(f"[{len(fetched)}/{max_addr}] hop {depth_of[addr]}  {addr}")
         try:
             txs, afgekapt = api.transfers(addr)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"    fout, overgeslagen: {e}")
             continue
 
@@ -171,7 +143,7 @@ def crawl(api, seeds, depth, top_n, hub_limit, max_addr, min_usdt, min_trx):
         for frm, to, munt, bedrag, ts, txid in txs:
             tegen = to if frm == addr else frm
             if frm == to or bedrag < (min_usdt if munt == "USDT" else min_trx):
-                continue  # ook stofjes / address poisoning eruit filteren
+                continue
             tegenpartij[tegen] += 1
             sleutel = (txid, munt, frm, to)
             if txid and sleutel in gezien:
@@ -204,10 +176,7 @@ def crawl(api, seeds, depth, top_n, hub_limit, max_addr, min_usdt, min_trx):
     return G, hubs
 
 
-# ---------- wallets + namen inlezen ----------
-
 def parse_wallets(lines):
-    """Lijnen zoals 'Jan, TXXX' of 'TXXX Jan' of alleen 'TXXX' -> (adressen, {adres: naam})."""
     seeds, namen = [], {}
     for l in lines:
         l = l.strip()
@@ -223,8 +192,6 @@ def parse_wallets(lines):
             namen[adres] = naam
     return list(dict.fromkeys(seeds)), namen
 
-
-# ---------- analyse ----------
 
 def bedrag_tekst(d):
     delen = []
@@ -291,8 +258,6 @@ def analyse(G, seeds, hubs, funders, namen):
     return samenvatting, details, pad_nodes, pad_edges
 
 
-# ---------- visualisatie ----------
-
 def teken(G, seeds, hubs, funders, pad_nodes, pad_edges, out, namen, samenvatting,
           alleen_verbanden=True):
     U = G.to_undirected()
@@ -301,7 +266,7 @@ def teken(G, seeds, hubs, funders, pad_nodes, pad_edges, out, namen, samenvattin
         houden = set(seeds) | pad_nodes | funder_set
         for n in U.nodes:
             if n not in houden and sum(1 for s in seeds if s in U and U.has_edge(n, s)) >= 2:
-                houden.add(n)  # tegenpartij die met 2+ van jouw wallets handelt
+                houden.add(n)
         H = G.subgraph(houden)
     else:
         H = G
@@ -339,7 +304,6 @@ def teken(G, seeds, hubs, funders, pad_nodes, pad_edges, out, namen, samenvattin
 
     net.save_graph(out)
 
-    # legende + samenvatting + grafiek stilzetten na het schikken
     items = "".join(f"<li>{htmlmod.escape(r)}</li>" for r in samenvatting) or "<li>geen paren</li>"
     paneel = f"""
 <div style="position:fixed;top:10px;left:10px;max-width:420px;max-height:90vh;overflow:auto;
@@ -367,12 +331,9 @@ if (typeof network !== "undefined") {{
         f.write(h)
 
 
-# ---------- main ----------
-
 def run(lines, api_key=None, depth=2, top=15, hub_limit=60, max_addr=120, pages=3,
         min_usdt=1.0, min_trx=0.5, out="tron_graaf.html", rapport_pad="tron_rapport.txt",
         alleen_verbanden=True):
-    """lines: lijnen met 'naam, adres' of alleen adres. Geeft (html pad, rapport tekst)."""
     seeds, namen = parse_wallets(lines)
     if not seeds:
         raise ValueError("Geef minstens 1 adres op.")
@@ -385,7 +346,7 @@ def run(lines, api_key=None, depth=2, top=15, hub_limit=60, max_addr=120, pages=
     for s in seeds:
         try:
             funders[s] = api.eerste_funder(s)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"  {namen.get(s, s)}: fout {e}")
             funders[s] = None
 

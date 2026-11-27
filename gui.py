@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-"""GUI voor tron_links.py: wallets ingeven, analyse starten, grafiek openen."""
 import json
 import os
 import queue
@@ -17,7 +15,6 @@ RESULTATEN = os.path.join(MAP, "resultaten")
 
 
 class QueueWriter:
-    """Stuurt print() output naar het logvenster."""
     def __init__(self, q):
         self.q = q
 
@@ -141,7 +138,7 @@ class App(tk.Tk):
             try:
                 html, _ = tron_links.run(seeds, api_key=key, out=out, rapport_pad=rapport, **params)
                 self.q.put(("KLAAR", html))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 self.q.put(("FOUT", str(e)))
             finally:
                 sys.stdout = oud
@@ -177,7 +174,7 @@ class App(tk.Tk):
     def open_map(self):
         os.makedirs(RESULTATEN, exist_ok=True)
         if sys.platform.startswith("win"):
-            os.startfile(RESULTATEN)  # noqa: S606
+            os.startfile(RESULTATEN)
         else:
             webbrowser.open("file://" + RESULTATEN)
 
